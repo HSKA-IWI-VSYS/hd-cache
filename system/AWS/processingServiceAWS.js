@@ -959,17 +959,18 @@ function connectToDB()	{
 	
 	lambdaLog('DB-Connection lost. Start Reconnecting');	
 	mysql = mysql || require('mysql');
+	let { dbConfig } = require('../../globals');
 	
 	return new Promise(function(resolve, reject) {
 		
 		dbConnection = mysql.createConnection({
-			host     : 'TO_SET',
-			port     :  3306,
-			database : 'TO_SET',
-			user     : 'TO_SET',
-			password : 'TO_SET',
-			debug    :  false,
-			multipleStatements: true
+			host     : 	dbConfig.host,
+			port     :  dbConfig.port,
+			database :  dbConfig.database,
+			user     :  dbConfig.user,
+			password :  dbConfig.password,
+			debug    :  dbConfig.debug,
+			multipleStatements: dbConfig.multipleStatements
 		});
 		
 		// Connect to the database.

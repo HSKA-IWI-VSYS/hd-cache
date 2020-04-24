@@ -899,19 +899,20 @@ function connectToDB()	{
 	
 	console.log('DB-Connection lost. Start Reconnecting');	
 	mysql = mysql || require('mysql');
+	let { dbConfig } = require('../globals');
 	
 	return new Promise(function(resolve, reject) {
 		
 		dbConnection = mysql.createConnection({
-			host     : '127.0.0.1',
-			port     :  3306,
-			database : 'scdm',
-			user     : 'root',
-			password : 'rootroot',
-			debug    :  false,
-			multipleStatements: true
+			host     : 	dbConfig.host,
+			port     :  dbConfig.port,
+			database :  dbConfig.database,
+			user     :  dbConfig.user,
+			password :  dbConfig.password,
+			debug    :  dbConfig.debug,
+			multipleStatements: dbConfig.multipleStatements
 		});
-		
+
 		// Connect to the database.
 		dbConnection.connect(function(err) {
 		
@@ -1122,10 +1123,10 @@ function fireUpdateQuery(navigator)	{
 		let u_locDelete = '';
 		// Creates a query to delete all entries in the queried range if the query to the foreign API was volume consistant.
 		if(result.full)	{
-			u_locDelete = 'DELETE FROM U_loc_' + MOCK_NAME + ' WHERE ' + mimicGreaterEqual(mysql.escape(r.start), r.field) + (r.end ? ' AND ' + r.field + ' < ' + mysql.escape(r.end) : '') + (navigator.lodisStart ? ' AND ' + mimicEqual(navigator.field, mysql.escape(navigator.start)): '') + ';';
+			u_locDelete = 'DELETE FROM u_loc_' + MOCK_NAME + ' WHERE ' + mimicGreaterEqual(mysql.escape(r.start), r.field) + (r.end ? ' AND ' + r.field + ' < ' + mysql.escape(r.end) : '') + (navigator.lodisStart ? ' AND ' + mimicEqual(navigator.field, mysql.escape(navigator.start)): '') + ';';
 		}
 		// Creates a query to insert the new entries into the local database.
-		let u_locInsert = 'REPLACE INTO U_loc_' + MOCK_NAME + '(' + COLUMNS_TO_SHOW.join(',') + ') VALUES';
+		let u_locInsert = 'REPLACE INTO u_loc_' + MOCK_NAME + '(' + COLUMNS_TO_SHOW.join(',') + ') VALUES';
 			
 		// Escapes all gathered values to avoid an accidential SQL-Injection.
 		result.res.forEach(function(el)	{
@@ -1866,7 +1867,7 @@ function cont(ADpara)	{
 			dbRes = await simpleQuery('TRUNCATE TABLE u_loc_' + MOCK_NAME + ';');
 			dbRes = await simpleQuery('TRUNCATE TABLE hd_mock_' + MOCK_NAME + ';');
 			dbRes = await simpleQuery('TRUNCATE TABLE splinter;');
-			dbRes = await simpleQuery('TRUNCATE TABLE maintenanceList;');
+			dbRes = await simpleQuery('TRUNCATE TABLE maintenancelist;');
 			dbRes = await simpleQuery('TRUNCATE TABLE bank_' + MOCK_NAME + ';');
 			
 			// Load entries into the database
@@ -2164,7 +2165,7 @@ function prepareAD(c, first)	{
 		});
 		
 		// Pass all splinter which are three days old or older into the maintenance list.
-		dbRes = await simpleQuery('REPLACE INTO maintenanceList SELECT * FROM splinter WHERE TIMESTAMP <= NOW() - INTERVAL 3 DAY;');
+		dbRes = await simpleQuery('REPLACE INTO maintenancelist SELECT * FROM splinter WHERE TIMESTAMP <= NOW() - INTERVAL 3 DAY;');
 		
 		return resolve(allCalls);
 	});

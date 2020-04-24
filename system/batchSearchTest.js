@@ -598,7 +598,7 @@ See the License for the specific language governing permissions.
 
 
 /**
- *	Queries the local database U_loc for the first g-many entries fitting 
+ *	Queries the local database u_loc for the first g-many entries fitting 
  *	a specified filter according to ascending sort.
  *
  *	@param a: The specified filter as JSON. In detail:
@@ -615,7 +615,7 @@ See the License for the specific language governing permissions.
 function Q_loc(a, g, L_TRENCH)	{
 		// Specifies the attribute to use for the range filter.
 		const field = L_TRENCH ? UNIQUE_IDENTIFICATOR : a.v;
-		let query = 'SELECT * FROM U_loc_' + MOCK_NAME + ' WHERE ';
+		let query = 'SELECT * FROM u_loc_' + MOCK_NAME + ' WHERE ';
 		// If L_TRENCH is set, add an additional equalityFilter for the attribute a.v and the value in L_TRENCH.
 		if(L_TRENCH)	{
 			query += mimicEqual(a.v, mysql2.escape(L_TRENCH)) + ' AND ';
@@ -643,7 +643,7 @@ function Q_loc(a, g, L_TRENCH)	{
 			let query = '';
 			if(full)	{
 				// Adds a deleting query on the specified range.
-				query += 'DELETE FROM U_loc_' + MOCK_NAME + ' WHERE ' + mimicGreaterEqual(mysql2.escape(start), L_TRENCH ? UNIQUE_IDENTIFICATOR : field) 
+				query += 'DELETE FROM u_loc_' + MOCK_NAME + ' WHERE ' + mimicGreaterEqual(mysql2.escape(start), L_TRENCH ? UNIQUE_IDENTIFICATOR : field) 
 				+ ' AND ' + (L_TRENCH ? UNIQUE_IDENTIFICATOR : field) + ' < ' + mysql2.escape(end) + ';';
 			}
 			// Adds the additional equality-filter if L_TRENCH is set.
@@ -651,7 +651,7 @@ function Q_loc(a, g, L_TRENCH)	{
 				query = query.replace(/;$/, ' AND ' + mimicEqual(field, mysql2.escape(L_TRENCH)) + ';');
 			}
 			// Creates the new insert query. will rewrite entries with the same unuqie identificator.
-			query += 'REPLACE INTO U_loc_' + MOCK_NAME + '(' + attributes.join(',') + ') VALUES'
+			query += 'REPLACE INTO u_loc_' + MOCK_NAME + '(' + attributes.join(',') + ') VALUES'
 			for(let i=0; i < E.length; i++)	{
 				let E_values = [];
 				for(let j=0; j < attributes.length; j++)	{
@@ -998,17 +998,18 @@ function Q_loc(a, g, L_TRENCH)	{
 		console.log('DB-Connection lost. Start Reconnecting');
 		
 		mysql2 = mysql2 || require('mysql');
+		let { dbConfig } = require('../globals');
 		
 		return new Promise(function(resolve, reject) {
 			
 			dbConnection2 = mysql2.createConnection({
-				host     : '127.0.0.1',
-				port     :  3306,
-				database : 'scdm',
-				user     : 'root',
-				password : 'rootroot',
-				debug    :  false,
-				multipleStatements: true
+				host     : 	dbConfig.host,
+				port     :  dbConfig.port,
+				database :  dbConfig.database,
+				user     :  dbConfig.user,
+				password :  dbConfig.password,
+				debug    :  dbConfig.debug,
+				multipleStatements: dbConfig.multipleStatements
 			});
 			
 			// Connect to the database.
@@ -1362,7 +1363,7 @@ function Q_loc(a, g, L_TRENCH)	{
 				console.log('Current limit: ' + limit);
 				enter = false;
 				// Extracts all entries to contain in the new, optimally sized splinter.
-				var followerQuery = 'SELECT ' + field + ', ' + UNIQUE_IDENTIFICATOR + ' FROM U_loc_' + MOCK_NAME + ' WHERE '
+				var followerQuery = 'SELECT ' + field + ', ' + UNIQUE_IDENTIFICATOR + ' FROM u_loc_' + MOCK_NAME + ' WHERE '
 				if(lodis){
 					followerQuery += mimicEqual(field, mysql2.escape(lodis)) + ' AND ';
 				}
@@ -1384,7 +1385,7 @@ function Q_loc(a, g, L_TRENCH)	{
 				// Checks if the next shard has to be a shard over LODIS.
 				if(!lodis && am === 0 && res.length === (G - P + 1) && res[0][field] === limit)	{
 					// Extract all entries matching the LODIS value.
-					var res2 = await  u_locQuery('SELECT * FROM U_loc_' + MOCK_NAME + ' WHERE ' + mimicEqual(field,mysql2.escape(limit)) + ' ORDER BY ' + UNIQUE_IDENTIFICATOR + ' ASC;');
+					var res2 = await  u_locQuery('SELECT * FROM u_loc_' + MOCK_NAME + ' WHERE ' + mimicEqual(field,mysql2.escape(limit)) + ' ORDER BY ' + UNIQUE_IDENTIFICATOR + ' ASC;');
 					// Create splinter until all entries found for the LODIS value are covered.
 					for(var i=0; i < res2.length; i += G - P)	{					
 						splinter = {

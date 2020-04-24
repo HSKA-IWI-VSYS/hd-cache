@@ -17,6 +17,7 @@ See the License for the specific language governing permissions.
 
 // setup necessary libraries.
 let mysql = require('mysql');
+let { dbConfig } = require('../globals')
 let dbConnection;
 const TYPE = 'GAUSSIAN';
 
@@ -52,28 +53,28 @@ function shuffle(array) {
  */
 function connectToDB()	{
 	
-	lambdaLog('DB-Connection lost. Start Reconnecting');
+	console.log('DB-Connection lost. Start Reconnecting');
 	
 	return new Promise(function(resolve, reject) {
 		
 		dbConnection = mysql.createConnection({
-			host     : 'TO_SET',
-			port     :  3306,
-			database : 'TO_SET',
-			user     : 'TO_SET',
-			password : 'TO_SET',
-			debug    :  false,
-			multipleStatements: true
+			host     : 	dbConfig.host,
+			port     :  dbConfig.port,
+			database :  dbConfig.database,
+			user     :  dbConfig.user,
+			password :  dbConfig.password,
+			debug    :  dbConfig.debug,
+			multipleStatements: dbConfig.multipleStatements
 		});
 		
 		// Connect to the database.
 		dbConnection.connect(function(err) {
 		
 			if (err)	{
-				lambdaLog(JSON.stringify(err));
+				console.log(JSON.stringify(err));
 				return reject(err);
 			}
-			lambdaLog('Reconnecting done. DB-Connection established');
+			console.log('Reconnecting done. DB-Connection established');
 			return resolve(true);
 		});
 	});

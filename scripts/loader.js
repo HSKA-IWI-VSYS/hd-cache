@@ -78,14 +78,16 @@ function connectToDB()	{
 	return new Promise(function(resolve, reject) {
 		
 		mysql = mysql ? mysql : require('mysql');
+		let { dbConfig } = require('../globals');
+
 		dbConnection = mysql.createConnection({
-			host     : '127.0.0.1',
-			port     :  3306,
-			database : 'scdm',
-			user     : 'root',
-			password : 'rootroot',
-			debug    :  false,
-			multipleStatements: true
+			host     : 	dbConfig.host,
+			port     :  dbConfig.port,
+			database :  dbConfig.database,
+			user     :  dbConfig.user,
+			password :  dbConfig.password,
+			debug    :  dbConfig.debug,
+			multipleStatements: dbConfig.multipleStatements
 		});
 		
 		// Connect to the database.
