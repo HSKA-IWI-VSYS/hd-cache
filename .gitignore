@@ -1,0 +1,9 @@
+# ignore node modules
+node_modules
+
+# keep csv in root directory, but ignore in sub directory
+/**/*.csv
+!/*.csv
+
+# DBeaver project
+.project

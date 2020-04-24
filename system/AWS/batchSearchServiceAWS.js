@@ -678,7 +678,7 @@ function mimicEqual(left, right)	{
 
 
 /**
- *	Queries the local database U_loc for the first g-many entries fitting 
+ *	Queries the local database u_loc for the first g-many entries fitting 
  *	a specified filter according to ascending sort.
  *
  *	@param a: The specified filter as JSON. In detail:
@@ -1005,17 +1005,18 @@ function connectToDB()	{
 	lambdaLog('DB-Connection lost. Start Reconnecting');
 	
 	mysql2 = mysql2 ? mysql2 : require('mysql');
+	let { dbConfig } = require('../../globals');
 	
 	return new Promise(function(resolve, reject) {
 		
 		dbConnection2 = mysql2.createConnection({
-			host     : 'TO_SET',
-			port     :  3306,
-			database : 'TO_SET',
-			user     : 'TO_SET',
-			password : 'TO_SET',
-			debug    :  false,
-			multipleStatements: true
+			host     : 	dbConfig.host,
+			port     :  dbConfig.port,
+			database :  dbConfig.database,
+			user     :  dbConfig.user,
+			password :  dbConfig.password,
+			debug    :  dbConfig.debug,
+			multipleStatements: dbConfig.multipleStatements
 		});
 		
 		// Connect to the database.
