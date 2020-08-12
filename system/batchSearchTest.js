@@ -483,7 +483,12 @@ See the License for the specific language governing permissions.
 	
 				// Gets triggered for every returned entry.
 				res.on('searchEntry', function(entry) {
-					results.push(entry.object || entry);
+					let o = entry.object || entry;
+					// Parses searchable values to lower case to enforce case-insensitivity.
+					for(let s = 0; s < attributes.length; s++)	{
+						o[attributes[s]] = (o[attributes[s]] || '').toLowerCase();
+					}
+					results.push(o);
 				});
 				// Gets called once the LDAP-API refuses to return further results.
 				res.on('error', async function(err) {
