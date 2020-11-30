@@ -38,6 +38,8 @@ let TIME_PAUSE = 0;
 let TIME_RESPONSE_TIME = 0;
 let TIME_TOTAL = 0;
 let UPDATE_QUERY = 0;
+let ENTRY_DIFF = 0;
+let ENTRY_DIFF_NEG = 0;
 
 //   --------------------------------	
 //   +++++   GLOBAL VARIABLES   +++++
@@ -66,9 +68,9 @@ const pauseTime = 3;
 // The name of the used dataset.
 var MOCK_NAME = 'landslides';
 // The volume dimension enforcing unique values.
-const CRAWL_DIM = MOCK_NAME !== 'landslides' ? 'uid' : 'event_id';
+var CRAWL_DIM = MOCK_NAME !== 'landslides' ? 'uid' : 'event_id';
 // Attributes to return to the user.
-const COLUMNS_TO_SHOW = MOCK_NAME !== 'landslides' ? ['uid', 'sn'] : ['event_id', 'event_title', 'source_name', 'event_date', 'country_name', 
+var COLUMNS_TO_SHOW = MOCK_NAME !== 'landslides' ? ['uid', 'sn'] : ['event_id', 'event_title', 'source_name', 'event_date', 'country_name', 
 				'landslide_setting']
 
 // The complete domain alphabet of each crawlable attribute.
@@ -95,8 +97,10 @@ var P = !LOCAL ? 10 : 10;
 let UNIQUE_IDENTIFICATOR = MOCK_NAME !== 'landslides' ? 'uid' : 'event_id';
 
 // Attributes to distribute calls onto. User requests will be made proportionally distributed over these attributes.
-var ATTR_CYCLE = MOCK_NAME !== 'landslides' ? ['sn'] : ['event_id','event_title'];
+var ATTR_CYCLE = MOCK_NAME !== 'landslides' ? ['sn'] : ['event_id','source_name'];
 
+/* Specifies if the delta between the entries returned from U_loc and the hidden database for the same query id is tracked. Works only with LOCAL set to true. Already deleted but from U_loc returned entries and in the hidden database but not in U_loc existing entries all increase the count by one each. Modifications in the entries themselves are not checked. However, this does not have a negative effect since the system does not manipulate entries.*/
+var WITH_DIFF = false;
 
 // Importing the BatchSearchService
 const BS = require('./batchSearch.js');
@@ -1743,7 +1747,8 @@ exports.handler = async function(event, context, callback)	{
 		}
 		
 		console.log('--- GET LOCAL ENTRIES ---');
-		var dataQuery = 'SELECT * FROM u_loc_' + MOCK_NAME + ' WHERE ';		
+		var dataQuery = 'SELECT * FROM u_loc_' + MOCK_NAME + ' AS a WHERE ';	
+		var dataQueryExtra = '';
 		// Builds the query.
 		for(let key in input)	{
 			var LB;
@@ -1760,20 +1765,46 @@ exports.handler = async function(event, context, callback)	{
 			}
 			
 			// Narrows down the data returned by the query as specified by the currently processed part of the user request.
-			dataQuery += mimicGreaterEqual(mysql.escape(LB), key) + ' AND ' + key + ' < ' + mysql.escape(UB) + ' AND ';
+			dataQueryExtra += mimicGreaterEqual(mysql.escape(LB), 'a.' + key) + ' AND ' + 'a.' + key + ' < ' + mysql.escape(UB) + ' AND ';
 		}
-		dataQuery = dataQuery.replace(/ AND $/, ';');
+		dataQueryExtra = dataQueryExtra.replace(/ AND $/, '');
+		dataQuery += dataQueryExtra + ';';
 		console.log(dataQuery);
 		
-		// Fore the query
+		// For the query
 		const result = await new Promise((resolve, reject) => {
+			let tickets = 2;
 			dbConnection.query(dataQuery, function(err, res)	{
 				if(err)	{
 					return reject(err);
 				}
 				console.log('Found ' + res.length + ' entries');
-				return resolve(res);
+				if(! WITH_DIFF || --tickets === 0)	{
+					return resolve(res);
+				}
+				else	{
+					others = res;
+				}
 			});
+			if(WITH_DIFF)	{
+				const diffQuery = `WITH summ AS (SELECT ${UNIQUE_IDENTIFICATOR} FROM hd_mock_${MOCK_NAME} AS a WHERE ${dataQueryExtra} UNION SELECT ${UNIQUE_IDENTIFICATOR} FROM u_loc_${MOCK_NAME} AS a WHERE ${dataQueryExtra}) SELECT COUNT(${UNIQUE_IDENTIFICATOR}) AS fc, (SELECT COUNT(${UNIQUE_IDENTIFICATOR}) FROM summ) - COUNT(${UNIQUE_IDENTIFICATOR}) AS fd FROM summ WHERE ${UNIQUE_IDENTIFICATOR} NOT IN (SELECT hd.${UNIQUE_IDENTIFICATOR} FROM hd_mock_${MOCK_NAME} AS hd INNER JOIN u_loc_${MOCK_NAME} AS a ON a.${UNIQUE_IDENTIFICATOR} = hd.${UNIQUE_IDENTIFICATOR} AND ${dataQueryExtra});`;
+
+				console.log(diffQuery);
+				dbConnection.query(diffQuery, function(err, res)	{
+					if(err)	{
+						return reject(err);
+					}
+					
+					ENTRY_DIFF += res[0].fc;
+					ENTRY_DIFF_NEG += res[0].fd;
+					
+					console.log('Found a delta of: ' + res[0].fc);
+					
+					if(--tickets === 0)	{
+						return resolve(res);
+					}
+				});
+			}
 		});
 
 		// Returns the found entries.
@@ -1837,7 +1868,13 @@ function simpleQuery(q)	{
 	});
 }
 
+
+// Set the amount of artificial days to evaluate.
+let DAYS = 11;
+		
 let dbRes = 0;
+let differ = 0;
+
 /**
  *	Exectutes the update-process with a provide artificial day configuration.
  *
@@ -1953,9 +1990,9 @@ function cont(ADpara)	{
 		FAILED_UPDATES = 0;
 		INSTANT_UPDATES = 0;
 		UPDATE_QUERY = 0;
+		ENTRY_DIFF = 0;
+		ENTRY_DIFF_NEG = 0;
 		
-		// Set the amount of artificial days tp evaluate.
-		const DAYS = 11;
 		// Iterate through the artificial days.
 		for(var i= !LOCAL ? DAYS - 1 : 0; i < DAYS; i++)	{
 			
@@ -1977,7 +2014,7 @@ function cont(ADpara)	{
 			console.log('Day ' + (i+1));
 			
 			// Every three artificial days, check how many queries a complete recrawl through TRENCH would require.
-			if(LOCAL && i > 0 && i % 3 === 0)	{
+			if(LOCAL && i > 0 && i % 3 === 0 && cc !== 'New5_')	{
 				const x = await callBatchSearch(UNIQUE_IDENTIFICATOR, 'dry');
 			}
 			
@@ -2011,8 +2048,11 @@ function cont(ADpara)	{
 					case 'New3_':
 					csv += '(' + (i+1) + ',' + TRENCH_CALLS  + ',' + FOREIGN_API_CALLS_TOTAL + ')\r\n';
 					break;
-					default:
+					case 'New4_':
 					csv += '(' + (i+1) + ',' + UPDATE_QUERY + ',' + FOREIGN_API_CALLS_TOTAL + ',' + INSTANT_UPDATES + ',' + FAILED_UPDATES + ')\r\n';
+					break;
+					case 'New5_':
+					csv += '(' + (i+1) + ',' + FOREIGN_API_CALLS_TOTAL + ',' + ENTRY_DIFF + ',' + ENTRY_DIFF_NEG + ')\r\n';
 					break;
 				}
 			}
@@ -2040,6 +2080,10 @@ function cont(ADpara)	{
 			console.log('TIME_PAUSE: ' + TIME_PAUSE);
 			console.log('TIME_RESPONSE_TIME: ' + TIME_RESPONSE_TIME);
 			console.log('TIME_SYSTEM: ' + TIME_SYSTEM);
+			if(WITH_DIFF)	{
+				console.log('DELTA: ' + ENTRY_DIFF);
+				console.log('CORRECTLY_RETURNED: ' + ENTRY_DIFF_NEG);
+			}
 			console.log('');
 			console.log('');
 			console.log('');
@@ -2048,6 +2092,8 @@ function cont(ADpara)	{
 			// Artifically process one day in the local database.
 			dbRes = await simpleQuery('UPDATE splinter SET TIMESTAMP = TIMESTAMP - INTERVAL 1 DAY;');
 			FOREIGN_API_CALLS_ITERATION = 0;
+			ENTRY_DIFF = 0;
+			ENTRY_DIFF_NEG = 0;
 		}
 		
 		// Close all connections
@@ -2058,7 +2104,7 @@ function cont(ADpara)	{
 		
 		// Write the measured results into a csv-file.
 		const fs = require('fs');
-		fs.writeFile((!LOCAL ? 'NCSU_' : (typeof cc === 'number' ? 'New4_' : '') + cc + '') + AD.CSV , csv, function(err) {
+		fs.writeFile(cc + (differ > 0 ? differ : '') + AD.CSV , csv, function(err) {
 			if(err) {
 				return reject0(err);
 			}
@@ -2071,7 +2117,7 @@ let oCount;
 let gold = [];
 let hot = [];
 let gh = [];
-let cc = 0;
+let cc = '';
 
 /**
  *	Simulates the actions expected to happen on one day and Calculates the artificial user requests for the next MICNORE run.
@@ -2164,7 +2210,7 @@ function prepareAD(c, first)	{
 		});
 		
 		// Pass all splinter which are three days old or older into the maintenance list.
-		dbRes = await simpleQuery('REPLACE INTO maintenanceList SELECT * FROM splinter WHERE TIMESTAMP <= NOW() - INTERVAL 3 DAY;');
+		dbRes = await simpleQuery('REPLACE INTO maintenanceList SELECT * FROM splinter WHERE TIMESTAMP <= NOW() - INTERVAL ' + c.SPLINTER_VALIDITY + ' DAY;');
 		
 		return resolve(allCalls);
 	});
@@ -2188,7 +2234,8 @@ const AD_base_G100 = {
 	INSERT_PERCENT: 3,
 	DEL_PERCENT: 2,
 	CALL_TYPE: 'GAUSSIAN',
-	CSV: 'AD_base_G100.csv'
+	CSV: 'AD_base_G100.csv',
+	SPLINTER_VALIDITY: 3
 };
 const AD_base_G10000 = {
 	GOLD_HOT_CALL_PERCENT: 20,
@@ -2198,7 +2245,8 @@ const AD_base_G10000 = {
 	INSERT_PERCENT: 3,
 	DEL_PERCENT: 2,
 	CALL_TYPE: 'GAUSSIAN',
-	CSV: 'AD_base_G10000.csv'
+	CSV: 'AD_base_G10000.csv',
+	SPLINTER_VALIDITY: 3
 };
 const AD_base_E100 = {
 	GOLD_HOT_CALL_PERCENT: 20,
@@ -2208,7 +2256,8 @@ const AD_base_E100 = {
 	INSERT_PERCENT: 3,
 	DEL_PERCENT: 2,
 	CALL_TYPE: 'EXTENSIVE',
-	CSV: 'AD_base_E100.csv'
+	CSV: 'AD_base_E100.csv',
+	SPLINTER_VALIDITY: 3
 };
 const AD_base_E10000 = {
 	GOLD_HOT_CALL_PERCENT: 20,
@@ -2218,7 +2267,8 @@ const AD_base_E10000 = {
 	INSERT_PERCENT: 3,
 	DEL_PERCENT: 2,
 	CALL_TYPE: 'EXTENSIVE',
-	CSV: 'AD_base_E10000.csv'
+	CSV: 'AD_base_E10000.csv',
+	SPLINTER_VALIDITY: 3
 };
 	
 const AD_grow_G100 = {
@@ -2229,7 +2279,8 @@ const AD_grow_G100 = {
 	INSERT_PERCENT: 10,
 	DEL_PERCENT: 1,
 	CALL_TYPE: 'GAUSSIAN',
-	CSV: 'AD_grow_G100.csv'
+	CSV: 'AD_grow_G100.csv',
+	SPLINTER_VALIDITY: 3
 };
 const AD_grow_G10000 = {
 	GOLD_HOT_CALL_PERCENT: 20,
@@ -2239,7 +2290,8 @@ const AD_grow_G10000 = {
 	INSERT_PERCENT: 10,
 	DEL_PERCENT: 1,
 	CALL_TYPE: 'GAUSSIAN',
-	CSV: 'AD_grow_G10000.csv'
+	CSV: 'AD_grow_G10000.csv',
+	SPLINTER_VALIDITY: 3
 };
 const AD_grow_E100 = {
 	GOLD_HOT_CALL_PERCENT: 20,
@@ -2249,7 +2301,8 @@ const AD_grow_E100 = {
 	INSERT_PERCENT: 10,
 	DEL_PERCENT: 1,
 	CALL_TYPE: 'EXTENSIVE',
-	CSV: 'AD_grow_E100.csv'
+	CSV: 'AD_grow_E100.csv',
+	SPLINTER_VALIDITY: 3
 };
 const AD_grow_E10000 = {
 	GOLD_HOT_CALL_PERCENT: 20,
@@ -2259,19 +2312,28 @@ const AD_grow_E10000 = {
 	INSERT_PERCENT: 10,
 	DEL_PERCENT: 1,
 	CALL_TYPE: 'EXTENSIVE',
-	CSV: 'AD_grow_E10000.csv'
+	CSV: 'AD_grow_E10000.csv',
+	SPLINTER_VALIDITY: 3
 };
 
 
+// 		-----------------------
+//		+++++ EVALUATIONS +++++
+// 		-----------------------
+//
+//		The different evaluations  
+//		executed in the paper.
 
 
 // Evaluation EV4
 async function startNew1LSOneBase()	{
 	
-	cc = 'New11_';
-	ATTR_CYCLE = ['event_title'];
+	cc = 'New1_';
+	ATTR_CYCLE = ['source_name'];
 	MOCK_NAME = 'landslides';
 	LOCAL = true;
+	smallDB = false;
+	prepare();
 	
 	await cont(AD_base_G100);
 	await cont(AD_base_E100);
@@ -2279,30 +2341,22 @@ async function startNew1LSOneBase()	{
 	await cont(AD_base_E10000);
 }
 
-// DEPRACTED
-async function startNew2NAMES10000OneGrow()	{
-	
-	cc = 'New2_';
-	LOCAL = true;
-	await cont(AD_grow_G100);
-	await cont(AD_grow_G10000);
-	
-}
-
-
 // Evaluation EV5
 async function startNew22_30000()	{
 	
 	cc = 'New21_';
-	smallDB = true;
+	MOCK_NAME = 'names';
+	ATTR_CYCLE = ['sn']
 	LOCAL = true;
+	smallDB = true;
+	prepare();
 	
-	//await cont(AD_grow_G100);
-	//await cont(AD_grow_G10000);
+	await cont(AD_grow_G100);
+	await cont(AD_grow_G10000);
 	cc = 'New22_';
 	smallDB = false;
 	await cont(AD_grow_G100);
-	/*await cont(AD_grow_G10000);*/
+	await cont(AD_grow_G10000);
 }
 
 
@@ -2311,8 +2365,11 @@ async function startNew3MulitLSMultiBase()	{
 	
 	cc = 'New3_';
 	MOCK_NAME = 'landslides';
+	ATTR_CYCLE = ['event_id','source_name'];
 	LOCAL = true;
-	
+	smallDB = false;
+	prepare();
+
 	await cont(AD_base_G100);
 	await cont(AD_base_E100);
 	await cont(AD_base_G10000);
@@ -2323,18 +2380,45 @@ async function startNew3MulitLSMultiBase()	{
 // Evaluation EV7
 async function startNew4POneBase()	{
 	
-	cc = 0;
+	cc = 'New4_';
 	MOCK_NAME = 'landslides';
 	ATTR_CYCLE = ['source_name'];
 	LOCAL = true;
+	smallDB = false;
+	prepare();
 	
+	differ = 1;
 	await cont(AD_base_G100);
 	P = 5;
-	cc++;
+	differ = 2;
 	await cont(AD_base_G100);
 	P = 0;
-	cc++;
+	differ = 3;
 	await cont(AD_base_G100);
+}
+
+// Evaluation EV8
+async function startNew5DifferentValidities()	{
+	
+	cc = 'New5_';
+	MOCK_NAME = 'names';
+	ATTR_CYCLE = ['sn'];
+	LOCAL = true;
+	smallDB = true;
+	WITH_DIFF = true;
+	DAYS = 15;
+	prepare();
+	
+	let adCopy = Object.assign({}, AD_base_G100);
+	adCopy.SPLINTER_VALIDITY = 2;
+	differ = 1;
+	await cont(adCopy);
+	adCopy.SPLINTER_VALIDITY = 3;
+	differ = 2;
+	await cont(adCopy);
+	adCopy.SPLINTER_VALIDITY = 4;
+	differ = 3;
+	await cont(adCopy);
 }
 
 // Perform one artificial day against the LDAP foreign API.
@@ -2344,10 +2428,28 @@ async function startR()	{
 	MOCK_NAME = 'ncsu';
 	ATTR_CYCLE = ['sn'];
 	LOCAL = false;
+	smallDB = false;
+	prepare();
 	
 	await cont(100);
-
 }
+
+/* Adapts global parameters according to the parameters set in the start-function. For descriptions of the different variables,
+	please refer to the top of the file. */
+function prepare()	{
+	CRAWL_DIM = MOCK_NAME !== 'landslides' ? 'uid' : 'event_id';
+	COLUMNS_TO_SHOW = MOCK_NAME !== 'landslides' ? ['uid', 'sn'] : ['event_id', 'event_title', 'source_name', 'event_date', 'country_name', 
+					'landslide_setting']
+	UNIQUE_IDENTIFICATOR = MOCK_NAME !== 'landslides' ? 'uid' : 'event_id';
+	G = !LOCAL ? 500 : 50;
+	P = !LOCAL ? 10 : 10;
+}
+
+
+//---------------------------------
+//  CHOOSE YOUR EVALUATION HERE
+//---------------------------------
+
 
 // Use this to replicate EV4:
 //startNew1LSOneBase();
@@ -2360,3 +2462,6 @@ async function startR()	{
 
 // Use this to replicate EV7:
 //startNew4POneBase();
+
+// Use this to replicate EV8 & EV9:
+//startNew5DifferentValidities();
